@@ -82,7 +82,7 @@ function insiderScore(t) {
   if (role.includes("10%")) score += 8;
 
   return Math.min(score, 100);
-}
+}const url
 
 function verdict(score) {
   if (score >= 80) return "HIGH CONVICTION";
@@ -90,10 +90,9 @@ function verdict(score) {
   if (score >= 55) return "WATCH";
   return "NOISE";
 }
+const url = `https://financialmodelingprep.com/stable/insider-trading/latest?page=0&limit=100&apikey=${FMP_KEY}`;
 
 async function getLatestInsiderTrades() {
-  const url =
-    `https://financialmodelingprep.com/api/v4/insider-trading?limit=100&apikey=${FMP_KEY}`;
 
   const res = await fetch(url);
   const data = await res.json();
@@ -181,7 +180,7 @@ async function enrichTrade(t) {
 }
 
 async function scan() {
-  const raw = await getLatestInsiderTrades();
+  const raw = await getLatestInsiderTrades();const url = `https://financialmodelingprep.com/stable/insider-trading/latest?page=0&limit=100&apikey=${FMP_KEY}`;
 
   const purchases = raw
     .filter(isPurchase)
