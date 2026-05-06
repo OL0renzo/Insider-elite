@@ -1,68 +1,103 @@
 const express = require('express');
-const nodemailer = require('nodemailer');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-// EMAIL CONFIG
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: 'TUA_EMAIL@gmail.com',
-    pass: 'APP_PASSWORD'
+const PORT = 3000;
+
+const signals = [
+  {
+    company: "IperionX",
+    ticker: "IPX",
+    insider: "CEO",
+    role: "CEO",
+    value: 493000,
+    drop: 34,
+    cluster: true,
+    score: 80,
+    verdict: "HIGH CONVICTION"
   }
+];
+
+app.get('/', (req, res) => {
+
+  let html = `
+  <html>
+  <head>
+    <title>Insider Elite</title>
+
+    <style>
+      body{
+        font-family: Arial;
+        background:#f4f4f4;
+        padding:20px;
+      }
+
+      .card{
+        background:white;
+        padding:20px;
+        border-radius:14px;
+        margin-bottom:20px;
+        box-shadow:0 2px 10px rgba(0,0,0,0.1);
+      }
+
+      .score{
+        color:green;
+        font-size:28px;
+        font-weight:bold;
+      }
+    </style>
+
+  </head>
+
+  <body>
+
+    <h1>Insider Elite</h1>
+  `;
+
+  signals.forEach(s => {
+
+    html += `
+      <div class="card">
+
+        <h2>${s.company} (${s.ticker})</h2>
+
+        <div class="score">
+          Score: ${s.score}
+        </div>
+
+        <p>
+          <b>Verdict:</b> ${s.verdict}
+        </p>
+
+        <p>
+          <b>Insider:</b> ${s.insider}
+        </p>
+
+        <p>
+          <b>Value:</b> $${s.value}
+        </p>
+
+        <p>
+          <b>Drop:</b> -${s.drop}%
+        </p>
+
+      </div>
+    `;
+  });
+
+  html += `
+    </body>
+    </html>
+  `;
+
+  res.send(html);
+
 });
 
-// SCORING
-function score(t) {
-  let s = 0;
-  if (t.value > 100000) s += 25;
-  if (t.role === "CEO") s += 25;
-  if (t.cluster) s += 20;
-  if (t.drop > 20) s += 10;
-  return s;
-}
-
-// DATI (per ora funzionanti)
-async function getData() {
-  return [
-    {
-      company: "IperionX",
-      insider: "CEO",
-      role: "CEO",
-      value: 493000,
-      drop: 34,
-      cluster: true
-    }
-  ];
-}
-
-// CORE
-async function run(sendEmail = false) {
-  const data = await getData();
-
-  for (const t of data) {
-    t.score = score(t);
-
-    if (sendEmail && t.score >= 70) {
-      await transporter.sendMail({
-        from: 'insider@app.com',
-        to: 'TUA_EMAIL@gmail.com',
-        subject: '🚨 INSIDER ALERT',
-        text: `${t.company} - Score ${t.score}`
-      });
-    }
-  }
-
-  return data;
-}
-
-// API
-app.get('/signals', async (req, res) => {
-  res.json(await run(false));
+app.get('/signals', (req, res) => {
+  res.json(signals);
 });
 
-// AUTO
-setInterval(() => run(true), 10 * 60 * 1000);
-
-app.listen(PORT, () => console.log("RUNNING"));
+app.listen(PORT, () => {
+  console.log("RUNNING");
+});
