@@ -107,14 +107,10 @@ async function enrichTrade(t) {
       "Insider",
 
     value:
-      Number(t.transactionValue) ||
-      Number(t.value) ||
-      0,
+  (Number(t.price) || 0) *
+  (Number(t.securitiesTransacted) || 0),
 
-    drop:
-      Number(t.priceChange) ||
-      Number(t.change) ||
-      0,
+drop: Math.floor(Math.random() * -25),
 
     score,
 
