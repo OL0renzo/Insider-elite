@@ -182,7 +182,7 @@ async function scan() {
       trade: t,
       value: getTradeValue(t),
     }))
-    .filter((x) => x.value >= 25000)
+    .filter((x) => x.value >= 0)
     .sort((a, b) => b.value - a.value)
     .slice(0, 40);
 
@@ -191,7 +191,7 @@ async function scan() {
   for (const item of purchases) {
     try {
       const enriched = await enrichTrade(item.trade);
-      if (enriched.score >= 35) results.push(enriched);
+      results.push( enriched);
     } catch (err) {
       console.log("Errore enrich:", err.message);
     }
