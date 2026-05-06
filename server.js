@@ -351,7 +351,14 @@ app.get("/", async (req, res) => {
 
   res.send(renderDashboard(cachedResults));
 });
+app.get("/debug", async (req, res) => {
+  const raw = await getLatestInsiderTrades();
 
+  res.json({
+    count: Array.isArray(raw) ? raw.length : 0,
+    sample: Array.isArray(raw) ? raw.slice(0, 5) : raw
+  });
+});
 app.get("/signals", async (req, res) => {
   if (cachedResults.length === 0) {
     await scan();
