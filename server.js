@@ -116,7 +116,7 @@ async function scan() {
   for (const symbol of WATCHLIST) {
     try {
       const result = await analyzeSymbol(symbol);
-      if (result && result.score >= 60) results.push(result);
+      if (result && result.score >= 45) results.push(result);
     } catch (err) {
       console.log("Errore su", symbol, err.message);
     }
