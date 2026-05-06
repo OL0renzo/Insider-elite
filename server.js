@@ -1,103 +1,201 @@
-const express = require('express');
+require("dotenv").config();
+
+const express = require("express");
+const fetch = require("node-fetch");
+const nodemailer = require("nodemailer");
 
 const app = express();
+const PORT = process.env.PORT || 3000;
 
-const PORT = 3000;
+const FMP_KEY = process.env.FMP_KEY;
+const EMAIL_USER = process.env.EMAIL_USER;
+const EMAIL_PASS = process.env.EMAIL_PASS;
 
-const signals = [
-  {
-    company: "IperionX",
-    ticker: "IPX",
-    insider: "CEO",
-    role: "CEO",
-    value: 493000,
-    drop: 34,
-    cluster: true,
-    score: 80,
-    verdict: "HIGH CONVICTION"
-  }
-];
+const WATCHLIST = ["AAPL", "MSFT", "AMZN", "NVDA", "TSLA", "UNH", "AMAT", "AMD", "META"];
 
-app.get('/', (req, res) => {
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: EMAIL_USER,
+    pass: EMAIL_PASS,
+  },
+});
 
-  let html = `
-  <html>
-  <head>
-    <title>Insider Elite</title>
+function insiderScore(t) {
+  let score = 0;
 
-    <style>
-      body{
-        font-family: Arial;
-        background:#f4f4f4;
-        padding:20px;
-      }
+  const value = Number(t.securitiesTransacted || 0) * Number(t.price || 0);
+  const role = String(t.reportingName || "").toLowerCase();
+  const type = String(t.transactionType || "").toLowerCase();
 
-      .card{
-        background:white;
-        padding:20px;
-        border-radius:14px;
-        margin-bottom:20px;
-        box-shadow:0 2px 10px rgba(0,0,0,0.1);
-      }
+  if (type.includes("purchase") || type.includes("p-purchase")) score += 35;
+  if (value >= 100000) score += 25;
+  if (value >= 500000) score += 15;
+  if (role.includes("ceo") || role.includes("chief executive")) score += 20;
+  if (role.includes("cfo") || role.includes("chief financial")) score += 15;
 
-      .score{
-        color:green;
-        font-size:28px;
-        font-weight:bold;
-      }
-    </style>
+  return Math.min(score, 100);
+}
 
-  </head>
+function technicalScore(quote) {
+  let score = 50;
 
-  <body>
+  const change = Number(quote.changesPercentage || 0);
+  const volume = Number(quote.volume || 0);
+  const avgVolume = Number(quote.avgVolume || 1);
 
-    <h1>Insider Elite</h1>
-  `;
+  if (change < -3) score += 10;
+  if (change < -7) score += 15;
+  if (volume > avgVolume * 1.5) score += 15;
 
-  signals.forEach(s => {
+  return Math.max(0, Math.min(score, 100));
+}
 
-    html += `
-      <div class="card">
+function finalScore(insider, technical) {
+  return Math.round(insider * 0.7 + technical * 0.3);
+}
 
-        <h2>${s.company} (${s.ticker})</h2>
+function verdict(score) {
+  if (score >= 80) return "HIGH CONVICTION";
+  if (score >= 70) return "CONVICTION";
+  if (score >= 60) return "WATCH";
+  return "NOISE";
+}
 
-        <div class="score">
-          Score: ${s.score}
-        </div>
+async function getInsiders(symbol) {
+  const url = `https://financialmodelingprep.com/api/v4/insider-trading?symbol=${symbol}&apikey=${FMP_KEY}`;
+  const res = await fetch(url);
+  return await res.json();
+}
 
-        <p>
-          <b>Verdict:</b> ${s.verdict}
-        </p>
+async function getQuote(symbol) {
+  const url = `https://financialmodelingprep.com/api/v3/quote/${symbol}?apikey=${FMP_KEY}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  return data[0] || {};
+}
 
-        <p>
-          <b>Insider:</b> ${s.insider}
-        </p>
+async function analyzeSymbol(symbol) {
+  const insiders = await getInsiders(symbol);
+  const quote = await getQuote(symbol);
 
-        <p>
-          <b>Value:</b> $${s.value}
-        </p>
+  const recent = Array.isArray(insiders) ? insiders.slice(0, 10) : [];
 
-        <p>
-          <b>Drop:</b> -${s.drop}%
-        </p>
-
-      </div>
-    `;
+  const buys = recent.filter(t => {
+    const type = String(t.transactionType || "").toLowerCase();
+    const value = Number(t.securitiesTransacted || 0) * Number(t.price || 0);
+    return type.includes("purchase") && value >= 100000;
   });
 
-  html += `
-    </body>
+  if (buys.length === 0) return null;
+
+  const bestTrade = buys[0];
+
+  const iScore = insiderScore(bestTrade);
+  const tScore = technicalScore(quote);
+  const total = finalScore(iScore, tScore);
+
+  return {
+    company: quote.name || symbol,
+    ticker: symbol,
+    price: quote.price || null,
+    insider: bestTrade.reportingName || "Unknown",
+    transactionType: bestTrade.transactionType || "Unknown",
+    value: Math.round(Number(bestTrade.securitiesTransacted || 0) * Number(bestTrade.price || 0)),
+    insiderScore: iScore,
+    technicalScore: tScore,
+    score: total,
+    verdict: verdict(total),
+    date: bestTrade.transactionDate || bestTrade.filingDate || null,
+  };
+}
+
+async function scan() {
+  const results = [];
+
+  for (const symbol of WATCHLIST) {
+    try {
+      const result = await analyzeSymbol(symbol);
+      if (result && result.score >= 60) results.push(result);
+    } catch (err) {
+      console.log("Errore su", symbol, err.message);
+    }
+  }
+
+  return results.sort((a, b) => b.score - a.score);
+}
+
+async function sendAlerts(results) {
+  const top = results.filter(r => r.score >= 70);
+  if (top.length === 0) return;
+
+  const body = top.map(r => `
+${r.ticker} - ${r.verdict}
+Score: ${r.score}
+Insider: ${r.insider}
+Value: $${r.value}
+Date: ${r.date}
+`).join("\n");
+
+  await transporter.sendMail({
+    from: EMAIL_USER,
+    to: EMAIL_USER,
+    subject: "🚨 Insider Elite - nuovi segnali",
+    text: body,
+  });
+}
+
+app.get("/", async (req, res) => {
+  const results = await scan();
+
+  const cards = results.map(r => `
+    <div class="card">
+      <h2>${r.company} (${r.ticker})</h2>
+      <h1>Score: ${r.score}</h1>
+      <p><b>Verdict:</b> ${r.verdict}</p>
+      <p><b>Insider:</b> ${r.insider}</p>
+      <p><b>Type:</b> ${r.transactionType}</p>
+      <p><b>Value:</b> $${r.value}</p>
+      <p><b>Date:</b> ${r.date}</p>
+      <p><b>Price:</b> $${r.price}</p>
+      <p><b>Insider Score:</b> ${r.insiderScore}</p>
+      <p><b>Technical Score:</b> ${r.technicalScore}</p>
+    </div>
+  `).join("");
+
+  res.send(`
+    <html>
+      <head>
+        <title>Insider Elite</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <style>
+          body { font-family: Arial; background:#f3f1ed; padding:24px; }
+          h1 { font-size:34px; }
+          .card {
+            background:white;
+            padding:24px;
+            margin:18px 0;
+            border-radius:18px;
+            box-shadow:0 8px 24px rgba(0,0,0,.08);
+          }
+          .card h1 { color:#1f7a3f; }
+        </style>
+      </head>
+      <body>
+        <h1>Insider Elite</h1>
+        ${cards || "<p>Nessun segnale forte al momento.</p>"}
+      </body>
     </html>
-  `;
-
-  res.send(html);
-
+  `);
 });
 
-app.get('/signals', (req, res) => {
-  res.json(signals);
+app.get("/signals", async (req, res) => {
+  res.json(await scan());
 });
 
-app.listen(PORT, () => {
-  console.log("RUNNING");
-});
+setInterval(async () => {
+  const results = await scan();
+  await sendAlerts(results);
+}, 30 * 60 * 1000);
+
+app.listen(PORT, () => console.log("RUNNING"));
