@@ -92,10 +92,17 @@ function verdict(score) {
 }
 
 async function getLatestInsiderTrades() {
+  const url =
+    `https://financialmodelingprep.com/api/v4/insider-trading?limit=100&apikey=${FMP_KEY}`;
+
+  const res = await fetch(url);
+  const data = await res.json();
+
+  return Array.isArray(data) ? data : [];
+}
   const urls = [
     `https://financialmodelingprep.com/stable/insider-trading/search?page=0&limit=200&apikey=${FMP_KEY}`,
-    `https://financialmodelingprep.com/api/v4/insider-trading?transactionType=P-Purchase&limit=200&apikey=${FMP_KEY}`,
-  ];
+    `https://financialmodelingprep.com/stable/insider-trading/latest?apikey=${FMP_KEY}
 
   for (const url of urls) {
     try {
