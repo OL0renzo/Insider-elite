@@ -6,10 +6,8 @@ const cors = require("cors");
 const app = express();
 
 app.use(cors());
-app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
-
 const FMP_KEY = process.env.FMP_KEY;
 
 let latestSignals = [];
@@ -19,7 +17,7 @@ function verdict(score) {
   if (score >= 80) return "HIGH CONVICTION";
   if (score >= 70) return "CONVICTION";
   if (score >= 55) return "WATCH";
-  return "IGNORE";
+  return "SPECULATIVE";
 }
 
 async function getLatestInsiderTrades() {
@@ -27,98 +25,58 @@ async function getLatestInsiderTrades() {
   const url =
     `https://financialmodelingprep.com/stable/insider-trading/latest?page=0&limit=100&apikey=${FMP_KEY}`;
 
-  const res = await fetch(url);
-  const data = await res.json();
+  const response = await fetch(url);
+  const data = await response.json();
 
   return Array.isArray(data) ? data : [];
 }
 
-function scoreTrade(t) {
+function buildSignal(t) {
+
+  const shares =
+    Number(t.securitiesTransacted) || 0;
+
+  const price =
+    Number(t.price) || 0;
+
+  const value = shares * price;
 
   let score = 50;
 
-  const value =
-    Number(t.transactionValue) ||
-    Number(t.value) ||
-    0;
+  if (value > 5000000) score += 25;
+  else if (value > 1000000) score += 15;
+  else if (value > 250000) score += 10;
 
-  const change =
-    Number(t.priceChange) ||
-    Number(t.change) ||
-    0;
+  const owner =
+    (t.typeOfOwner || "").toLowerCase();
 
-  const insider =
-    (t.reportingName || t.insiderName || "").toLowerCase();
-
-  const type =
+  const txType =
     (t.transactionType || "").toLowerCase();
 
-  if (value > 2000000) score += 20;
-  else if (value > 500000) score += 10;
-
-  if (change < -15) score += 15;
-  else if (change < -8) score += 10;
+  if (owner.includes("ceo")) score += 20;
+  if (owner.includes("director")) score += 10;
 
   if (
-    insider.includes("ceo") ||
-    insider.includes("chief executive")
+    txType.includes("purchase") ||
+    txType.includes("buy") ||
+    txType.includes("award")
   ) {
     score += 15;
   }
 
-  if (
-    insider.includes("director")
-  ) {
-    score += 5;
-  }
-
-  if (
-    type.includes("purchase") ||
-    type.includes("buy")
-  ) {
-    score += 10;
-  }
-
   if (score > 100) score = 100;
 
-  return score;
-}
-
-async function enrichTrade(t) {
-
-  const score = scoreTrade(t);
-
   return {
-    company:
-      t.companyName ||
-      t.symbol ||
-      "Unknown",
-
-    ticker:
-      t.symbol || "N/A",
-
-    insider:
-      t.reportingName ||
-      t.insiderName ||
-      "Unknown",
-
-    role:
-      t.reportingCik ||
-      "Insider",
-
-    value:
-  (Number(t.price) || 0) *
-  (Number(t.securitiesTransacted) || 0),
-
-drop: Math.floor(Math.random() * -25),
-
+    company: t.symbol,
+    ticker: t.symbol,
+    insider: t.reportingName || "Unknown",
+    role: t.typeOfOwner || "Insider",
+    value: Math.round(value),
+    shares,
+    price,
     score,
-
     verdict: verdict(score),
-
-    filingDate:
-      t.filingDate ||
-      null
+    filingDate: t.filingDate
   };
 }
 
@@ -128,19 +86,15 @@ async function scan() {
 
     const raw = await getLatestInsiderTrades();
 
-    const enriched = await Promise.all(
-      raw.map(enrichTrade)
-    );
-
-    latestSignals = enriched
-      .filter(t => t.score >= 55)
+    latestSignals = raw
+      .map(buildSignal)
       .sort((a, b) => b.score - a.score)
       .slice(0, 20);
 
     lastScanTime = new Date();
 
     console.log(
-      `Updated ${latestSignals.length} signals`
+      `Loaded ${latestSignals.length} insider signals`
     );
 
   } catch (err) {
